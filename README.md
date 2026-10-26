@@ -1,5 +1,50 @@
 # user-registration-pipeline
-Python, Docker, Spark, Kafka
+Python, Docker, Spark, Kafka, Snowflake
+
+## Snowflake export
+
+`spark/daily_registration_job.py` aggregates registrations per day and writes
+the result to Snowflake. The target table is replaced atomically through a
+Snowflake staging table. The job refuses to write when MongoDB returns no
+registrations, so an empty source cannot erase existing Snowflake data.
+
+Add these variables to `.env`:
+
+```dotenv
+SNOWFLAKE_ACCOUNT=your-account-identifier
+SNOWFLAKE_USER=your-user
+SNOWFLAKE_PASSWORD=your-password
+SNOWFLAKE_DATABASE=USER_REGISTRATION_DB
+SNOWFLAKE_SCHEMA=ANALYTICS
+SNOWFLAKE_WAREHOUSE=COMPUTE_WH
+SNOWFLAKE_TABLE=DAILY_REGISTRATIONS
+SNOWFLAKE_ROLE=your-role
+```
+
+`SNOWFLAKE_ACCOUNT` accepts either the bare account identifier or a hostname
+ending in `.snowflakecomputing.com`. `SNOWFLAKE_ROLE` is optional. Database,
+schema, warehouse, table, and role must be simple unquoted identifiers
+containing only letters, digits, underscores, or dollar signs; they are
+normalized to uppercase.
+
+For key-pair authentication, omit `SNOWFLAKE_PASSWORD` and set
+`SNOWFLAKE_PRIVATE_KEY_PATH` to an unencrypted PEM private key. Relative paths
+are resolved from the project root.
+
+The Snowflake role needs `USAGE` on the database, schema, and warehouse, plus
+`CREATE TABLE` and `CREATE STAGE` on the schema. The target table is created if
+it does not exist:
+
+```sql
+CREATE TABLE IF NOT EXISTS USER_REGISTRATION_DB.ANALYTICS.DAILY_REGISTRATIONS (
+    registration_date DATE,
+    new_users BIGINT
+);
+```
+
+The Spark job uses connector `net.snowflake:spark-snowflake_2.13:3.2.3-spark_4.1`
+and downloads the connector and JDBC driver on first run. The machine running
+the job needs access to Maven Central and Snowflake.
 
 ## Spark on Windows
 
@@ -21,6 +66,12 @@ so step 2 can be skipped when running that script.
 python spark/daily_registration_job.py
 ```
 
-The script loads credentials from `.env` and connects to the MongoDB container
-through `localhost:27017`. Set `MONGO_HOST=mongodb` when running inside the
-Docker network.
+The script loads credentials from `.env`, connects to the MongoDB container
+through `localhost:27017`, and writes the daily aggregate to Snowflake. Set
+`MONGO_HOST=mongodb` when running inside the Docker network.
+
+Run the configuration tests with:
+
+```powershell
+python -m unittest discover -s tests -v
+```
