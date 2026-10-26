@@ -22,7 +22,7 @@ try:
         producer.flush()
 
         print(f"Registration sent: {event}")
-        time.sleep(5)
+        time.sleep(5000)
 
 except KeyboardInterrupt:
     print("Producer stopped.")
