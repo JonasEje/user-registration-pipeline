@@ -1,9 +1,8 @@
 
 import json
-import os
 
 from kafka import KafkaConsumer
-from pymongo import MongoClient, UpdateOne
+from pymongo import MongoClient
 
 KAFKA_BOOTSTRAP_SERVERS = "127.0.0.1:9094"
 KAFKA_TOPIC = "user-registrations"
@@ -20,7 +19,7 @@ users = database["User"]
 consumer = KafkaConsumer(
     KAFKA_TOPIC,
     bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
-    auto_offset_reset="earliest",
+    auto_offset_reset="latest",
     enable_auto_commit=True,
     group_id="user-registration-consumer",
     value_deserializer=lambda value: json.loads(value.decode("utf-8")),
