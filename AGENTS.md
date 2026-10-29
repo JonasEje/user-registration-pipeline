@@ -30,9 +30,20 @@ If a change seems to require a comment, the design is unclear. Fix the design.
 - `producer/producer.py` publishes UUID-based registration events to Kafka.
 - `consumer/consumer.py` consumes those events and idempotently upserts users into MongoDB.
 - `spark/daily_registration_job.py` reads MongoDB with the Spark MongoDB connector, aggregates registrations per day, and writes the result to Snowflake.
+<<<<<<< Updated upstream
 - `compose.yaml` defines the local MongoDB and Kafka services.
 - `Dockerfile` and `README.Docker.md` are unused Docker template artifacts; the Compose stack does not build this service.
 - `README.md` documents local setup, Snowflake configuration, and how to run the Spark job.
+=======
+- `backend/src/server.js` runs the Express API that publishes registrations to Kafka, reads daily counts from MongoDB, and serves `frontend/`.
+- `frontend/` contains the static HTML, CSS, and JavaScript dashboard served by the backend.
+- `snowflake/` contains the RSA key generator, the database setup SQL, and the Snowflake configuration tests.
+- `compose.yaml` defines MongoDB, Kafka, the containerized Python app, the backend, and Kafka UI.
+- `Dockerfile` builds the Python app image with the producer, consumer, and Spark job; `requirements.txt` and `run.sh` support that image.
+- `backend/Dockerfile` builds the backend image and serves `frontend/` from the same container.
+- `README.Docker.md` is an unused Docker template artifact.
+- `README.md` documents local setup, Snowflake configuration, the Spark job, and the backend and frontend.
+>>>>>>> Stashed changes
 
 ## 3. Non-negotiable engineering rules
 

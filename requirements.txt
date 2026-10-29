@@ -1,0 +1,4 @@
+kafka-python==3.0.11
+pymongo==4.19.0
+pyspark==4.2.0
+python-dotenv==1.2.4

@@ -1,15 +1,20 @@
 import os
 import re
 from pathlib import Path
+<<<<<<< Updated upstream
 from urllib.parse import quote_plus
+=======
+from typing import Any
+from urllib.parse import quote
+>>>>>>> Stashed changes
 
 from dotenv import load_dotenv
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql.functions import col, count, to_date
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-MONGO_DATABASE = "UserRegistrationDB"
-MONGO_COLLECTION = "User"
+DEFAULT_MONGO_DATABASE = "UserRegistrationDB"
+DEFAULT_MONGO_COLLECTION = "User"
 MONGO_CONNECTOR_PACKAGE = "org.mongodb.spark:mongo-spark-connector_2.13:11.1.0"
 SNOWFLAKE_CONNECTOR_PACKAGE = (
     "net.snowflake:spark-snowflake_2.13:3.2.3-spark_4.1"
@@ -44,11 +49,30 @@ def configure_hadoop_home() -> None:
 
 
 def build_mongo_uri() -> str:
-    username = quote_plus(require_env("MONGO_ROOT_USERNAME"))
-    password = quote_plus(require_env("MONGO_ROOT_PASSWORD"))
-    host = os.environ.get("MONGO_HOST", "localhost")
-    port = os.environ.get("MONGO_PORT", "27017")
+    explicit_uri = optional_env("MONGO_URI")
+    if explicit_uri:
+        return explicit_uri
+
+    username = quote(require_env("MONGO_ROOT_USERNAME"), safe="")
+    password = quote(require_env("MONGO_ROOT_PASSWORD"), safe="")
+    host = optional_env("MONGO_HOST") or "localhost"
+    port = optional_env("MONGO_PORT") or "27017"
     return f"mongodb://{username}:{password}@{host}:{port}/?authSource=admin"
+
+
+def mongo_database() -> str:
+    return optional_env("MONGO_DATABASE") or DEFAULT_MONGO_DATABASE
+
+
+def mongo_collection() -> str:
+    return optional_env("MONGO_COLLECTION") or DEFAULT_MONGO_COLLECTION
+
+
+def ensure_registration_columns(columns: list[str]) -> None:
+    if "registered_at" not in columns:
+        raise RuntimeError(
+            "No registrations found in MongoDB; refusing to overwrite Snowflake"
+        )
 
 
 def validate_identifier(value: str, name: str) -> str:
@@ -145,8 +169,8 @@ def create_spark_session() -> SparkSession:
             f"{MONGO_CONNECTOR_PACKAGE},{SNOWFLAKE_CONNECTOR_PACKAGE}",
         )
         .config("spark.mongodb.read.connection.uri", build_mongo_uri())
-        .config("spark.mongodb.read.database", MONGO_DATABASE)
-        .config("spark.mongodb.read.collection", MONGO_COLLECTION)
+        .config("spark.mongodb.read.database", mongo_database())
+        .config("spark.mongodb.read.collection", mongo_collection())
         .config("spark.sql.session.timeZone", "UTC")
         .getOrCreate()
     )
@@ -154,6 +178,7 @@ def create_spark_session() -> SparkSession:
 
 def load_daily_counts(spark: SparkSession) -> DataFrame:
     users_df = spark.read.format("mongodb").load()
+    ensure_registration_columns(users_df.columns)
     return (
         users_df.withColumn(
             "registration_date",
