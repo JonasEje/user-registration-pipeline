@@ -3,11 +3,17 @@
 Instructions for OpenCode and any other AI coding agent working in this repository.
 These rules apply to every file and every change unless the user explicitly overrides them.
 
+## 0. Project context
+
+The project ingests user registrations through Kafka, stores them in MongoDB, aggregates them with Apache Spark, and exports analytical data to Snowflake. The Node.js backend in `backend/` publishes registrations and serves the static dashboard in `frontend/`.
+
+The Kafka producer, MongoDB consumer, Spark aggregation, Compose services, and Node backend are working. Do not rebuild or restart them without a specific reason. Extend them instead.
+
 ## 1. Rule zero: never write comments
 
 This is a hard, non-negotiable rule.
 
-- Do not add comments to Python, YAML, Dockerfiles, JSON, shell scripts, SQL, tests, or code samples in documentation.
+- Do not add comments to Python, JavaScript, YAML, Dockerfiles, JSON, shell scripts, SQL, tests, or code samples in documentation.
 - Do not add docstrings, module docstrings, section banners, or explanatory inline notes.
 - Do not leave commented-out code, `TODO`, `FIXME`, `NOTE`, or `XXX` markers.
 - Do not use comments to explain intent during a refactor. Rename variables, extract functions, introduce constants, or add types instead.
@@ -23,11 +29,13 @@ If a change seems to require a comment, the design is unclear. Fix the design.
 
 - `producer/producer.py` publishes UUID-based registration events to Kafka.
 - `consumer/consumer.py` consumes those events and idempotently upserts users into MongoDB.
-- `spark/daily_registration_job.py` reads MongoDB with the Spark MongoDB connector and aggregates registrations per day.
+- `spark/daily_registration_job.py` reads MongoDB with the Spark MongoDB connector, aggregates registrations per day, and writes the result to Snowflake.
+- `backend/src/server.js` runs the Express API that publishes registrations to Kafka, reads daily counts from MongoDB, and serves `frontend/`.
+- `frontend/` contains the static HTML, CSS, and JavaScript dashboard served by the backend.
+- `snowflake/` contains the RSA key generator, the database setup SQL, and the Snowflake configuration tests.
 - `compose.yaml` defines the local MongoDB and Kafka services.
-- `spark/Dockerfile` builds the Spark job image.
 - `Dockerfile` and `README.Docker.md` are unused Docker template artifacts; the Compose stack does not build this service.
-- `README.md` documents local setup and how to run the Spark job.
+- `README.md` documents local setup, Snowflake configuration, the Spark job, and the backend and frontend.
 
 ## 3. Non-negotiable engineering rules
 
@@ -35,7 +43,7 @@ If a change seems to require a comment, the design is unclear. Fix the design.
 
 - Never hardcode credentials, tokens, connection strings with passwords, or personal data.
 - `.env` is gitignored. Never commit it, print it, log it, or echo its values.
-- Read secrets and environment-specific values from environment variables. The existing names are `MONGO_ROOT_USERNAME`, `MONGO_ROOT_PASSWORD`, `MONGO_HOST`, and `MONGO_PORT`.
+- Read secrets and environment-specific values from environment variables. The existing names are `MONGO_ROOT_USERNAME`, `MONGO_ROOT_PASSWORD`, `MONGO_HOST`, `MONGO_PORT`, `MONGO_URI`, `MONGO_DATABASE`, `MONGO_COLLECTION`, `KAFKA_BOOTSTRAP_SERVERS`, `KAFKA_TOPIC`, `PORT`, `SNOWFLAKE_ACCOUNT`, `SNOWFLAKE_USER`, `SNOWFLAKE_PASSWORD`, `SNOWFLAKE_PRIVATE_KEY_PATH`, `SNOWFLAKE_DATABASE`, `SNOWFLAKE_SCHEMA`, `SNOWFLAKE_WAREHOUSE`, `SNOWFLAKE_TABLE`, and `SNOWFLAKE_ROLE`.
 - When adding a new required variable, fail fast with an error that names the variable, and document it in `README.md`. Never include the missing value in the error.
 - `consumer/consumer.py` currently hardcodes a MongoDB URI. Do not copy that pattern. Move it to environment variables when touching the file.
 - Never log full events or user documents in production code. Log identifiers and counts only.
@@ -84,6 +92,9 @@ If a change seems to require a comment, the design is unclear. Fix the design.
 - Keep field names in snake_case and timestamps in UTC.
 - Producer, consumer, and Spark job consume the same contract. Any schema change must update all three in one change.
 - Preserve consumer idempotency. Upserts must use `$setOnInsert` with `_id` so redelivered messages cannot create duplicates.
+- Snowflake target columns: `registration_date` (DATE) and `new_users` (BIGINT).
+- The Snowflake export replaces the target table atomically through a staging table. Do not switch to an append-only write without handling duplicate days.
+- Never overwrite Snowflake when the MongoDB source returns no registrations.
 - Do not change topic, database, collection, port, or service names without updating all code, `compose.yaml`, and `README.md`.
 
 ## 7. Spark and Docker standards
@@ -91,6 +102,10 @@ If a change seems to require a comment, the design is unclear. Fix the design.
 - Keep Spark transformations column-based. Do not call `collect()` or move unbounded data to the driver.
 - Keep `local[*]` for local development only. Do not add cluster configuration unless the task asks for it.
 - Stop the Spark session in a `finally` block.
+- Keep the Snowflake connector version pinned and test package compatibility before upgrading Spark.
+- Read Snowflake account, user, credentials, and identifiers only from environment variables.
+- Keep the Snowflake write idempotent and atomic. Preserve the staging-table overwrite and explicit target schema unless the task requires different semantics.
+- Refuse to write to Snowflake when the source DataFrame is empty.
 - Pin image and runtime versions. Never introduce `latest`.
 - Keep the non-root user in the root `Dockerfile` and do not add secrets to images.
 - Keep published ports bound to `127.0.0.1` for local services.
@@ -99,16 +114,19 @@ If a change seems to require a comment, the design is unclear. Fix the design.
 
 ## 8. Testing and verification
 
-There is no automated test suite yet.
+Python tests live under `snowflake/` and use the standard library `unittest`. Node tests live under `backend/test/` and use the built-in `node --test` runner.
 
-- Add `pytest` tests under `tests/` when adding non-trivial logic, a bug fix, or a data-contract change.
-- Unit tests must not require a live Kafka broker, MongoDB instance, or network access. Extract pure logic or use fakes.
+- Add Python tests under `snowflake/` and Node tests under `backend/test/` when adding non-trivial logic, a bug fix, or a data-contract change. Use `pytest` when it is available, otherwise use the standard library `unittest`.
+- Unit tests must not require a live Kafka broker, MongoDB instance, Snowflake account, or network access. Extract pure logic or use fakes.
 - Do not test framework internals or implementation details.
 - Always run the fastest relevant checks before finishing:
 
 ```powershell
-python -m compileall producer consumer spark
+python -m compileall producer consumer spark snowflake
+python -m unittest discover -s snowflake -p "test_*.py" -v
 docker compose config
+cd backend
+npm.cmd test
 ```
 
 - For integration changes, verify with `docker compose up -d` and targeted producer, consumer, or Spark runs. Report the exact commands and observed results.
@@ -139,6 +157,7 @@ docker compose config
 - [ ] Secrets and environment-specific values come from environment variables.
 - [ ] Errors are handled specifically and resources are cleaned up.
 - [ ] Producer, consumer, and Spark contracts remain aligned.
+- [ ] The Snowflake export remains idempotent and refuses to overwrite from an empty source.
 - [ ] Tests were added or updated, or the absence of tests is justified.
 - [ ] Verification commands were run and results reported.
 - [ ] Documentation was updated if behavior or configuration changed.

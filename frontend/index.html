@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>User Registrations</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main>
+      <header class="hero">
+        <p class="eyebrow">Registration pipeline</p>
+        <h1>User Registrations</h1>
+        <p class="subtitle">
+          Add a registration and watch the daily totals grow.
+        </p>
+      </header>
+
+      <section class="card actions">
+        <button id="register-button" type="button">Register now</button>
+        <button id="refresh-button" class="secondary" type="button">
+          Refresh counts
+        </button>
+        <p id="status" class="status" role="status"></p>
+      </section>
+
+      <section class="card">
+        <h2>Registrations per day</h2>
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Date</th>
+                <th scope="col">New users</th>
+              </tr>
+            </thead>
+            <tbody id="stats-body"></tbody>
+          </table>
+        </div>
+        <p id="empty-state" class="empty" hidden>No registrations yet.</p>
+      </section>
+    </main>
+
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>
