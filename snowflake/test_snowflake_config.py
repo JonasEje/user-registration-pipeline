@@ -1,14 +1,21 @@
 import base64
 import os
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 from spark.daily_registration_job import (
     PROJECT_ROOT,
+    build_mongo_uri,
     build_snowflake_options,
     create_snowflake_table_statement,
+    ensure_registration_columns,
+    mongo_collection,
+    mongo_database,
     qualified_snowflake_table,
     resolve_private_key_path,
 )
@@ -47,6 +54,54 @@ def key_environment(private_key_path: str) -> dict[str, str]:
     }
     environment["SNOWFLAKE_PRIVATE_KEY_PATH"] = private_key_path
     return environment
+
+
+class MongoSourceTests(unittest.TestCase):
+    def test_explicit_mongo_uri_is_used(self) -> None:
+        with patch.dict(
+            os.environ,
+            {"MONGO_URI": "mongodb://example.test:27017"},
+            clear=True,
+        ):
+            self.assertEqual(
+                build_mongo_uri(),
+                "mongodb://example.test:27017",
+            )
+
+    def test_mongo_credentials_are_percent_encoded(self) -> None:
+        env = {
+            "MONGO_ROOT_USERNAME": "project admin",
+            "MONGO_ROOT_PASSWORD": "p@ss word",
+        }
+
+        with patch.dict(os.environ, env, clear=True):
+            self.assertEqual(
+                build_mongo_uri(),
+                "mongodb://project%20admin:p%40ss%20word@localhost:27017/"
+                "?authSource=admin",
+            )
+
+    def test_database_and_collection_come_from_environment(self) -> None:
+        env = {
+            "MONGO_DATABASE": "OtherDatabase",
+            "MONGO_COLLECTION": "OtherCollection",
+        }
+
+        with patch.dict(os.environ, env, clear=True):
+            self.assertEqual(mongo_database(), "OtherDatabase")
+            self.assertEqual(mongo_collection(), "OtherCollection")
+
+    def test_database_and_collection_have_defaults(self) -> None:
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(mongo_database(), "UserRegistrationDB")
+            self.assertEqual(mongo_collection(), "User")
+
+    def test_missing_registered_at_column_is_rejected(self) -> None:
+        with self.assertRaisesRegex(RuntimeError, "No registrations found"):
+            ensure_registration_columns(["_id"])
+
+    def test_registered_at_column_is_accepted(self) -> None:
+        ensure_registration_columns(["_id", "registered_at"])
 
 
 class SnowflakeConfigTests(unittest.TestCase):

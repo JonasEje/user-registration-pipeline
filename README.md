@@ -1,6 +1,60 @@
 # user-registration-pipeline
 Python, Docker, Spark, Kafka, Snowflake
 
+## Docker stack
+
+Start MongoDB, Kafka, the Python app, the backend, and Kafka UI:
+
+```powershell
+docker compose up -d --build
+```
+
+The `app` service contains `producer/producer.py`, `consumer/consumer.py`, and
+`spark/daily_registration_job.py`. It runs the producer and consumer together:
+one demo registration is published every `PRODUCER_INTERVAL_SECONDS` (default
+`5000`, so every 5000 seconds) and stored in MongoDB.
+
+The `backend` service serves the Express API and the static dashboard from
+`frontend/` at http://localhost:3000. Start only the backend and its
+dependencies:
+
+```powershell
+docker compose up -d backend
+```
+
+Rebuild it after changing `backend/` or `frontend/`:
+
+```powershell
+docker compose up -d --build backend
+```
+
+Open Kafka UI at http://localhost:8080 to inspect the `local` cluster,
+`user-registrations` topic, and consumer group.
+
+Run the Snowflake export inside the running container:
+
+```powershell
+docker compose exec app python spark/daily_registration_job.py
+```
+
+The container mounts `~/.snowflake` read-only at `/keys`, so the RSA key is
+available at `/keys/rsa_key.p8`. Set `SNOWFLAKE_KEY_DIR` when the key lives
+elsewhere.
+
+| Variable | Default |
+| --- | --- |
+| `PRODUCER_INTERVAL_SECONDS` | `5000` |
+| `KAFKA_TOPIC` | `user-registrations` |
+| `KAFKA_GROUP_ID` | `user-registration-consumer` |
+| `MONGO_DATABASE` | `UserRegistrationDB` |
+| `MONGO_COLLECTION` | `User` |
+| `SNOWFLAKE_KEY_DIR` | `~/.snowflake` |
+
+Compose connects the container to `kafka:9092` and `mongodb:27017`, so the
+host-only defaults do not apply inside Docker.
+
+Stop the stack with `docker compose down`.
+
 ## Snowflake export
 
 `spark/daily_registration_job.py` aggregates registrations per day and writes
@@ -9,15 +63,26 @@ Snowflake staging table. The job refuses to write when MongoDB returns no
 registrations, so an empty source cannot erase existing Snowflake data.
 
 For local development, run `snowflake/setup.sql` once in a Snowflake worksheet
-as `ACCOUNTADMIN`. It creates the warehouse, database, and schema, then prints
-the active role, user, warehouse, database, and schema.
+as `ACCOUNTADMIN`. It creates the warehouse, database, schema, the target
+table, and the cumulative view `DAILY_REGISTRATIONS_TOTAL`, then prints the
+current rows.
+
+Inspect the exported rows with the Snowflake CLI:
+
+```powershell
+snow sql -q "select * from USER_REGISTRATION_DB.ANALYTICS.DAILY_REGISTRATIONS_TOTAL order by registration_date"
+```
+
+In the Snowflake web UI open `Data Products > Databases >
+USER_REGISTRATION_DB > Analytics` to see the `DAILY_REGISTRATIONS` table and
+the `DAILY_REGISTRATIONS_TOTAL` view.
 
 Add these variables to `.env`:
 
 ```dotenv
 SNOWFLAKE_ACCOUNT=your-account-identifier
 SNOWFLAKE_USER=your-user
-SNOWFLAKE_PRIVATE_KEY_PATH=~/.snowflake/rsa_key.p8
+SNOWFLAKE_PASSWORD=your-password
 SNOWFLAKE_DATABASE=USER_REGISTRATION_DB
 SNOWFLAKE_SCHEMA=ANALYTICS
 SNOWFLAKE_WAREHOUSE=COMPUTE_WH
@@ -25,44 +90,19 @@ SNOWFLAKE_TABLE=DAILY_REGISTRATIONS
 SNOWFLAKE_ROLE=your-role
 ```
 
-Set `SNOWFLAKE_PASSWORD` instead of `SNOWFLAKE_PRIVATE_KEY_PATH` to use password
-authentication. The key path takes precedence when both are present.
-
 `SNOWFLAKE_ACCOUNT` accepts either the bare account identifier or a hostname
 ending in `.snowflakecomputing.com`. `SNOWFLAKE_ROLE` is optional. Database,
 schema, warehouse, table, and role must be simple unquoted identifiers
 containing only letters, digits, underscores, or dollar signs; they are
 normalized to uppercase.
 
-## Key-pair authentication
-
-Generate an unencrypted PKCS#8 key pair:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File snowflake/generate_rsa_key.ps1
-```
-
-The script writes `%USERPROFILE%\.snowflake\rsa_key.p8`, prints the public key
-body, and refuses to overwrite an existing key. Register that public key once in
-Snowflake as `ACCOUNTADMIN`:
-
-```sql
-ALTER USER <your-snowflake-user> SET RSA_PUBLIC_KEY='<printed-public-key>';
-```
-
-Set `SNOWFLAKE_PRIVATE_KEY_PATH` as shown above and remove
-`SNOWFLAKE_PASSWORD` from `.env`.
-
-Relative paths are resolved from the project root. The job reads the key,
-validates that it is an unencrypted PKCS#8 key, strips the PEM armor, and passes
-the base64 body to the connector. Encrypted keys and PKCS#1 keys beginning with
-`-----BEGIN RSA PRIVATE KEY-----` are rejected before Spark starts, together
-with the `openssl pkcs8 -topk8 -nocrypt` command that converts them.
+For key-pair authentication, omit `SNOWFLAKE_PASSWORD` and set
+`SNOWFLAKE_PRIVATE_KEY_PATH` to an unencrypted PEM private key. Relative paths
+are resolved from the project root.
 
 The Snowflake role needs `USAGE` on the database, schema, and warehouse, plus
-`CREATE TABLE` and `CREATE STAGE` on the schema. The job creates the target
-table through JDBC before writing, so the first run does not depend on a manual
-DDL step:
+`CREATE TABLE` and `CREATE STAGE` on the schema. The target table is created if
+it does not exist:
 
 ```sql
 CREATE TABLE IF NOT EXISTS USER_REGISTRATION_DB.ANALYTICS.DAILY_REGISTRATIONS (
@@ -97,7 +137,9 @@ python spark/daily_registration_job.py
 
 The script loads credentials from `.env`, connects to the MongoDB container
 through `localhost:27017`, and writes the daily aggregate to Snowflake. Set
-`MONGO_HOST=mongodb` when running inside the Docker network.
+`MONGO_HOST=mongodb` when running inside the Docker network. `MONGO_URI`
+overrides the assembled connection string, and `MONGO_DATABASE` /
+`MONGO_COLLECTION` select the source collection.
 
 Run the configuration tests with:
 
@@ -110,7 +152,16 @@ python -m unittest discover -s snowflake -p "test_*.py" -v
 `backend/` is an Express service that publishes registrations to Kafka and reads
 daily counts from MongoDB. It serves the static page in `frontend/`.
 
-Install and start it:
+Start it in Docker from the project root:
+
+```powershell
+docker compose up -d --build backend
+```
+
+Open http://localhost:3000. The container listens on port `3000` and reads the
+project `.env`.
+
+Alternatively run it directly with Node.js:
 
 ```powershell
 cd backend
@@ -141,4 +192,3 @@ Run the backend tests with:
 cd backend
 npm.cmd test
 ```
-

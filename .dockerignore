@@ -28,6 +28,9 @@
 **/node_modules
 **/npm-debug.log
 **/obj
+snowflake
+tests
+**/*.p8
 **/secrets.dev.yaml
 **/values.dev.yaml
 LICENSE

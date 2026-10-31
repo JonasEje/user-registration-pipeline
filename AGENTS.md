@@ -32,9 +32,11 @@ If a change seems to require a comment, the design is unclear. Fix the design.
 - `spark/daily_registration_job.py` reads MongoDB with the Spark MongoDB connector, aggregates registrations per day, and writes the result to Snowflake.
 - `backend/src/server.js` runs the Express API that publishes registrations to Kafka, reads daily counts from MongoDB, and serves `frontend/`.
 - `frontend/` contains the static HTML, CSS, and JavaScript dashboard served by the backend.
-- `snowflake/` contains the RSA key generator, the database setup SQL, and the Snowflake configuration tests.
-- `compose.yaml` defines the local MongoDB and Kafka services.
-- `Dockerfile` and `README.Docker.md` are unused Docker template artifacts; the Compose stack does not build this service.
+- `snowflake/` contains the RSA key generator, the database setup SQL, and the Python configuration tests.
+- `compose.yaml` defines MongoDB, Kafka, the containerized Python app, the backend, and Kafka UI.
+- `Dockerfile` builds the Python app image with the producer, consumer, and Spark job; `requirements.txt` and `run.sh` support that image.
+- `backend/Dockerfile` builds the backend image and serves `frontend/` from the same container.
+- `README.Docker.md` is an unused Docker template artifact.
 - `README.md` documents local setup, Snowflake configuration, the Spark job, and the backend and frontend.
 
 ## 3. Non-negotiable engineering rules
@@ -43,9 +45,9 @@ If a change seems to require a comment, the design is unclear. Fix the design.
 
 - Never hardcode credentials, tokens, connection strings with passwords, or personal data.
 - `.env` is gitignored. Never commit it, print it, log it, or echo its values.
-- Read secrets and environment-specific values from environment variables. The existing names are `MONGO_ROOT_USERNAME`, `MONGO_ROOT_PASSWORD`, `MONGO_HOST`, `MONGO_PORT`, `MONGO_URI`, `MONGO_DATABASE`, `MONGO_COLLECTION`, `KAFKA_BOOTSTRAP_SERVERS`, `KAFKA_TOPIC`, `PORT`, `SNOWFLAKE_ACCOUNT`, `SNOWFLAKE_USER`, `SNOWFLAKE_PASSWORD`, `SNOWFLAKE_PRIVATE_KEY_PATH`, `SNOWFLAKE_DATABASE`, `SNOWFLAKE_SCHEMA`, `SNOWFLAKE_WAREHOUSE`, `SNOWFLAKE_TABLE`, and `SNOWFLAKE_ROLE`.
+- Read secrets and environment-specific values from environment variables. The existing names are `MONGO_ROOT_USERNAME`, `MONGO_ROOT_PASSWORD`, `MONGO_HOST`, `MONGO_PORT`, `MONGO_URI`, `MONGO_DATABASE`, `MONGO_COLLECTION`, `KAFKA_BOOTSTRAP_SERVERS`, `KAFKA_TOPIC`, `KAFKA_GROUP_ID`, `PRODUCER_INTERVAL_SECONDS`, `PORT`, `SNOWFLAKE_ACCOUNT`, `SNOWFLAKE_USER`, `SNOWFLAKE_PASSWORD`, `SNOWFLAKE_PRIVATE_KEY_PATH`, `SNOWFLAKE_KEY_DIR`, `SNOWFLAKE_DATABASE`, `SNOWFLAKE_SCHEMA`, `SNOWFLAKE_WAREHOUSE`, `SNOWFLAKE_TABLE`, and `SNOWFLAKE_ROLE`.
 - When adding a new required variable, fail fast with an error that names the variable, and document it in `README.md`. Never include the missing value in the error.
-- `consumer/consumer.py` currently hardcodes a MongoDB URI. Do not copy that pattern. Move it to environment variables when touching the file.
+- The consumer assembles the MongoDB URI from environment variables. Keep that behavior when touching the file.
 - Never log full events or user documents in production code. Log identifiers and counts only.
 
 ### 3.2 Preserve user work
@@ -59,7 +61,7 @@ If a change seems to require a comment, the design is unclear. Fix the design.
 
 - Implement the smallest coherent change that solves the problem.
 - Do not add a dependency, framework, service, or build step without a concrete need and explicit justification.
-- Do not invent files that the repository does not reference. The root `Dockerfile` expects `requirements.txt` and `run.sh`, but neither exists; do not claim a successful application image build until they are added.
+- Do not invent files that the repository does not reference. The root `Dockerfile` builds the Python app image and expects `requirements.txt` and `run.sh`.
 - Do not upgrade Python, Spark, Kafka, MongoDB, or pinned image versions as a side effect of an unrelated change.
 
 ## 4. Workflow
