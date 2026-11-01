@@ -32,8 +32,8 @@ If a change seems to require a comment, the design is unclear. Fix the design.
 - `spark/daily_registration_job.py` reads MongoDB with the Spark MongoDB connector, aggregates registrations per day, and writes the result to Snowflake.
 - `backend/src/server.js` runs the Express API that publishes registrations to Kafka, reads daily counts from MongoDB, and serves `frontend/`.
 - `frontend/` contains the static HTML, CSS, and JavaScript dashboard served by the backend.
-- `snowflake/` contains the RSA key generator, the database setup SQL, and the Python configuration tests.
-- `compose.yaml` defines MongoDB, Kafka, the containerized Python app, the backend, and Kafka UI.
+- `snowflake/` contains the RSA key generator, the database setup SQL, the dashboard SQL, the Streamlit app and notebook under `snowflake/app/`, and the Python configuration tests.
+- `compose.yaml` defines MongoDB, Kafka, the containerized Python app, the Snowflake exporter, the backend, and Kafka UI.
 - `Dockerfile` builds the Python app image with the producer, consumer, and Spark job; `requirements.txt` and `run.sh` support that image.
 - `backend/Dockerfile` builds the backend image and serves `frontend/` from the same container.
 - `README.Docker.md` is an unused Docker template artifact.
@@ -45,7 +45,7 @@ If a change seems to require a comment, the design is unclear. Fix the design.
 
 - Never hardcode credentials, tokens, connection strings with passwords, or personal data.
 - `.env` is gitignored. Never commit it, print it, log it, or echo its values.
-- Read secrets and environment-specific values from environment variables. The existing names are `MONGO_ROOT_USERNAME`, `MONGO_ROOT_PASSWORD`, `MONGO_HOST`, `MONGO_PORT`, `MONGO_URI`, `MONGO_DATABASE`, `MONGO_COLLECTION`, `KAFKA_BOOTSTRAP_SERVERS`, `KAFKA_TOPIC`, `KAFKA_GROUP_ID`, `PRODUCER_INTERVAL_SECONDS`, `PORT`, `SNOWFLAKE_ACCOUNT`, `SNOWFLAKE_USER`, `SNOWFLAKE_PASSWORD`, `SNOWFLAKE_PRIVATE_KEY_PATH`, `SNOWFLAKE_KEY_DIR`, `SNOWFLAKE_DATABASE`, `SNOWFLAKE_SCHEMA`, `SNOWFLAKE_WAREHOUSE`, `SNOWFLAKE_TABLE`, and `SNOWFLAKE_ROLE`.
+- Read secrets and environment-specific values from environment variables. The existing names are `MONGO_ROOT_USERNAME`, `MONGO_ROOT_PASSWORD`, `MONGO_HOST`, `MONGO_PORT`, `MONGO_URI`, `MONGO_DATABASE`, `MONGO_COLLECTION`, `KAFKA_BOOTSTRAP_SERVERS`, `KAFKA_TOPIC`, `KAFKA_GROUP_ID`, `PRODUCER_INTERVAL_SECONDS`, `PORT`, `SNOWFLAKE_ACCOUNT`, `SNOWFLAKE_USER`, `SNOWFLAKE_PASSWORD`, `SNOWFLAKE_PRIVATE_KEY_PATH`, `SNOWFLAKE_KEY_DIR`, `SNOWFLAKE_DATABASE`, `SNOWFLAKE_SCHEMA`, `SNOWFLAKE_WAREHOUSE`, `SNOWFLAKE_TABLE`, `SNOWFLAKE_REGISTRATIONS_TABLE`, and `SNOWFLAKE_ROLE`.
 - When adding a new required variable, fail fast with an error that names the variable, and document it in `README.md`. Never include the missing value in the error.
 - The consumer assembles the MongoDB URI from environment variables. Keep that behavior when touching the file.
 - Never log full events or user documents in production code. Log identifiers and counts only.
@@ -95,8 +95,11 @@ If a change seems to require a comment, the design is unclear. Fix the design.
 - Producer, consumer, and Spark job consume the same contract. Any schema change must update all three in one change.
 - Preserve consumer idempotency. Upserts must use `$setOnInsert` with `_id` so redelivered messages cannot create duplicates.
 - Snowflake target columns: `registration_date` (DATE) and `new_users` (BIGINT).
-- The Snowflake export replaces the target table atomically through a staging table. Do not switch to an append-only write without handling duplicate days.
+- Snowflake stores the raw feed in `REGISTRATIONS` with `user_id` (VARCHAR) and `registered_at` (TIMESTAMP_TZ), and the daily aggregate in `DAILY_REGISTRATIONS`.
+- The Snowflake export replaces both target tables atomically through staging tables. Do not switch to an append-only write without handling duplicate days.
 - Never overwrite Snowflake when the MongoDB source returns no registrations.
+- The `REFRESH_DAILY_REGISTRATIONS_TASK` rebuilds `DAILY_REGISTRATIONS` from `REGISTRATIONS` every day at 00:10 UTC and must keep the empty-source guard.
+- The `exporter` service runs the Spark export once a day at 00:00 UTC and must keep the empty-source guard.
 - Do not change topic, database, collection, port, or service names without updating all code, `compose.yaml`, and `README.md`.
 
 ## 7. Spark and Docker standards

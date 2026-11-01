@@ -8,11 +8,12 @@ from urllib.parse import quote
 
 from dotenv import load_dotenv
 from pyspark.sql import DataFrame, SparkSession
-from pyspark.sql.functions import col, count, to_date
+from pyspark.sql.functions import col, count, to_date, to_timestamp
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_MONGO_DATABASE = "UserRegistrationDB"
 DEFAULT_MONGO_COLLECTION = "User"
+DEFAULT_REGISTRATIONS_TABLE = "REGISTRATIONS"
 MONGO_CONNECTOR_PACKAGE = "org.mongodb.spark:mongo-spark-connector_2.13:11.1.0"
 SNOWFLAKE_CONNECTOR_PACKAGE = (
     "net.snowflake:spark-snowflake_2.13:3.2.3-spark_4.1"
@@ -242,7 +243,7 @@ def execute_snowflake_statement(
         connection.close()
 
 
-def qualified_snowflake_table() -> str:
+def qualified_snowflake_name(value: str, name: str) -> str:
     database = validate_identifier(
         require_env("SNOWFLAKE_DATABASE"),
         "SNOWFLAKE_DATABASE",
@@ -251,17 +252,35 @@ def qualified_snowflake_table() -> str:
         require_env("SNOWFLAKE_SCHEMA"),
         "SNOWFLAKE_SCHEMA",
     )
-    table = validate_identifier(
+    return f"{database}.{schema}.{validate_identifier(value, name)}"
+
+
+def qualified_snowflake_table() -> str:
+    return qualified_snowflake_name(
         require_env("SNOWFLAKE_TABLE"),
         "SNOWFLAKE_TABLE",
     )
-    return f"{database}.{schema}.{table}"
+
+
+def qualified_snowflake_registrations_table() -> str:
+    return qualified_snowflake_name(
+        optional_env("SNOWFLAKE_REGISTRATIONS_TABLE")
+        or DEFAULT_REGISTRATIONS_TABLE,
+        "SNOWFLAKE_REGISTRATIONS_TABLE",
+    )
 
 
 def create_snowflake_table_statement(table: str) -> str:
     return (
         f"CREATE TABLE IF NOT EXISTS {table} "
         "(registration_date DATE, new_users BIGINT)"
+    )
+
+
+def create_registrations_table_statement(table: str) -> str:
+    return (
+        f"CREATE TABLE IF NOT EXISTS {table} "
+        "(user_id VARCHAR, registered_at TIMESTAMP_TZ)"
     )
 
 
@@ -281,15 +300,25 @@ def create_spark_session() -> SparkSession:
     )
 
 
-def load_daily_counts(spark: SparkSession) -> DataFrame:
+def load_registrations(spark: SparkSession) -> DataFrame:
     users_df = spark.read.format("mongodb").load()
     ensure_registration_columns(users_df.columns)
     return (
-        users_df.withColumn(
+        users_df.select(
+            col("_id").cast("string").alias("user_id"),
+            to_timestamp(col("registered_at")).alias("registered_at"),
+        )
+        .filter(col("registered_at").isNotNull())
+        .orderBy("registered_at")
+    )
+
+
+def load_daily_counts(registrations: DataFrame) -> DataFrame:
+    return (
+        registrations.withColumn(
             "registration_date",
             to_date(col("registered_at")),
         )
-        .filter(col("registration_date").isNotNull())
         .groupBy("registration_date")
         .agg(count("*").alias("new_users"))
         .orderBy("registration_date")
@@ -297,13 +326,13 @@ def load_daily_counts(spark: SparkSession) -> DataFrame:
     )
 
 
-def write_daily_counts(
-    daily_counts: DataFrame,
+def write_snowflake_table(
+    data: DataFrame,
     options: dict[str, str],
     table: str,
 ) -> None:
     (
-        daily_counts.write.format(SNOWFLAKE_FORMAT)
+        data.write.format(SNOWFLAKE_FORMAT)
         .options(**options)
         .option("dbtable", table)
         .option("truncate_table", "on")
@@ -320,32 +349,57 @@ def main() -> None:
 
     snowflake_options = build_snowflake_options()
     snowflake_table = qualified_snowflake_table()
+    registrations_table = qualified_snowflake_registrations_table()
 
     spark = create_spark_session()
     try:
-        daily_counts = load_daily_counts(spark)
-        daily_counts.persist()
+        registrations = load_registrations(spark)
+        registrations.persist()
 
         try:
-            if daily_counts.isEmpty():
+            if registrations.isEmpty():
                 raise RuntimeError(
                     "No registrations found in MongoDB; refusing to "
                     "overwrite Snowflake"
                 )
 
-            execute_snowflake_statement(
-                spark,
-                snowflake_options,
-                create_snowflake_table_statement(snowflake_table),
-            )
+            daily_counts = load_daily_counts(registrations)
+            daily_counts.persist()
 
-            print("Daily registrations from MongoDB:")
-            daily_counts.show(truncate=False)
+            try:
+                execute_snowflake_statement(
+                    spark,
+                    snowflake_options,
+                    create_registrations_table_statement(registrations_table),
+                )
+                execute_snowflake_statement(
+                    spark,
+                    snowflake_options,
+                    create_snowflake_table_statement(snowflake_table),
+                )
 
-            write_daily_counts(daily_counts, snowflake_options, snowflake_table)
-            print("Daily registrations written to Snowflake.")
+                print(
+                    "Registrations from MongoDB: "
+                    f"{registrations.count()}"
+                )
+                print("Daily registrations from MongoDB:")
+                daily_counts.show(truncate=False)
+
+                write_snowflake_table(
+                    registrations,
+                    snowflake_options,
+                    registrations_table,
+                )
+                write_snowflake_table(
+                    daily_counts,
+                    snowflake_options,
+                    snowflake_table,
+                )
+                print("Registrations and daily counts written to Snowflake.")
+            finally:
+                daily_counts.unpersist()
         finally:
-            daily_counts.unpersist()
+            registrations.unpersist()
     finally:
         spark.stop()
 

@@ -19,7 +19,9 @@ COPY producer ./producer
 COPY consumer ./consumer
 COPY spark ./spark
 COPY run.sh ./run.sh
-RUN chmod +x ./run.sh && chown -R appuser:appuser /app
+RUN chmod +x ./run.sh \
+    && mkdir -p /home/appuser/.ivy2 \
+    && chown -R appuser:appuser /app /home/appuser
 
 USER appuser
 

@@ -52,6 +52,30 @@ services:
       SNOWFLAKE_PRIVATE_KEY_PATH: /keys/rsa_key.p8
     volumes:
       - ${SNOWFLAKE_KEY_DIR:-~/.snowflake}:/keys:ro
+      - spark_ivy:/home/appuser/.ivy2
+
+  exporter:
+    build:
+      context: .
+    restart: unless-stopped
+    depends_on:
+      - mongodb
+    env_file:
+      - .env
+    entrypoint:
+      - python
+      - -m
+      - spark.export_scheduler
+    environment:
+      MONGO_URI: mongodb://${MONGO_ROOT_USERNAME}:${MONGO_ROOT_PASSWORD}@mongodb:27017/?authSource=admin
+      MONGO_HOST: mongodb
+      MONGO_PORT: "27017"
+      MONGO_DATABASE: ${MONGO_DATABASE:-UserRegistrationDB}
+      MONGO_COLLECTION: ${MONGO_COLLECTION:-User}
+      SNOWFLAKE_PRIVATE_KEY_PATH: /keys/rsa_key.p8
+    volumes:
+      - ${SNOWFLAKE_KEY_DIR:-~/.snowflake}:/keys:ro
+      - spark_ivy:/home/appuser/.ivy2
 
   backend:
     build:
@@ -88,3 +112,4 @@ services:
 
 volumes:
   mongodb_data:
+  spark_ivy:

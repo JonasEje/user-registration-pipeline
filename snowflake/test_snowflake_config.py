@@ -12,10 +12,12 @@ from spark.daily_registration_job import (
     PROJECT_ROOT,
     build_mongo_uri,
     build_snowflake_options,
+    create_registrations_table_statement,
     create_snowflake_table_statement,
     ensure_registration_columns,
     mongo_collection,
     mongo_database,
+    qualified_snowflake_registrations_table,
     qualified_snowflake_table,
     resolve_private_key_path,
 )
@@ -102,6 +104,33 @@ class MongoSourceTests(unittest.TestCase):
 
     def test_registered_at_column_is_accepted(self) -> None:
         ensure_registration_columns(["_id", "registered_at"])
+
+
+class RegistrationsTableTests(unittest.TestCase):
+    def test_registrations_table_has_default_name(self) -> None:
+        with patch.dict(os.environ, BASE_ENV, clear=True):
+            self.assertEqual(
+                qualified_snowflake_registrations_table(),
+                "USER_REGISTRATION_DB.ANALYTICS.REGISTRATIONS",
+            )
+
+    def test_registrations_table_name_comes_from_environment(self) -> None:
+        with patch.dict(
+            os.environ,
+            {**BASE_ENV, "SNOWFLAKE_REGISTRATIONS_TABLE": "raw_events"},
+            clear=True,
+        ):
+            self.assertEqual(
+                qualified_snowflake_registrations_table(),
+                "USER_REGISTRATION_DB.ANALYTICS.RAW_EVENTS",
+            )
+
+    def test_registrations_table_ddl(self) -> None:
+        self.assertEqual(
+            create_registrations_table_statement("DB.SCHEMA.REGISTRATIONS"),
+            "CREATE TABLE IF NOT EXISTS DB.SCHEMA.REGISTRATIONS "
+            "(user_id VARCHAR, registered_at TIMESTAMP_TZ)",
+        )
 
 
 class SnowflakeConfigTests(unittest.TestCase):
