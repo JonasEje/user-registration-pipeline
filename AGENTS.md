@@ -34,7 +34,7 @@ If a change seems to require a comment, the design is unclear. Fix the design.
 - `frontend/` contains the static HTML, CSS, and JavaScript dashboard served by the backend.
 - `snowflake/` contains the RSA key generator, the database setup SQL, the dashboard SQL, the Streamlit app and notebook under `snowflake/app/`, and the Python configuration tests.
 - `compose.yaml` defines MongoDB, Kafka, the containerized Python app, the Snowflake exporter, the backend, and Kafka UI.
-- `Dockerfile` builds the Python app image with the producer, consumer, and Spark job; `requirements.txt` and `run.sh` support that image.
+- `Dockerfile` builds the Python image with the producer, consumer, and Spark job; `requirements.txt` supports that image.
 - `backend/Dockerfile` builds the backend image and serves `frontend/` from the same container.
 - `README.Docker.md` is an unused Docker template artifact.
 - `README.md` documents local setup, Snowflake configuration, the Spark job, and the backend and frontend.
@@ -61,7 +61,7 @@ If a change seems to require a comment, the design is unclear. Fix the design.
 
 - Implement the smallest coherent change that solves the problem.
 - Do not add a dependency, framework, service, or build step without a concrete need and explicit justification.
-- Do not invent files that the repository does not reference. The root `Dockerfile` builds the Python app image and expects `requirements.txt` and `run.sh`.
+- Do not invent files that the repository does not reference. The root `Dockerfile` builds the Python image and expects `requirements.txt`.
 - Do not upgrade Python, Spark, Kafka, MongoDB, or pinned image versions as a side effect of an unrelated change.
 
 ## 4. Workflow

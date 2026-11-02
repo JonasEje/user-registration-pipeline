@@ -39,6 +39,10 @@ services:
       - kafka
     env_file:
       - .env
+    command:
+      - "bash"
+      - "-c"
+      - "trap 'kill $$(jobs -p) 2>/dev/null' TERM INT; python consumer/consumer.py & python producer/producer.py & wait -n"
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       KAFKA_TOPIC: ${KAFKA_TOPIC:-user-registrations}
@@ -62,7 +66,7 @@ services:
       - mongodb
     env_file:
       - .env
-    entrypoint:
+    command:
       - python
       - -m
       - spark.export_scheduler

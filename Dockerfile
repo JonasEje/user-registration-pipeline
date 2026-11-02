@@ -18,11 +18,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY producer ./producer
 COPY consumer ./consumer
 COPY spark ./spark
-COPY run.sh ./run.sh
-RUN chmod +x ./run.sh \
-    && mkdir -p /home/appuser/.ivy2 \
+RUN mkdir -p /home/appuser/.ivy2 \
     && chown -R appuser:appuser /app /home/appuser
 
 USER appuser
-
-ENTRYPOINT ["./run.sh"]
