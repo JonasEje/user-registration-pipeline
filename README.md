@@ -96,24 +96,24 @@ Create a file named `.env` in the project root and fill in your values. The file
 is gitignored and must never be committed.
 
 ```dotenv
-MONGO_ROOT_USERNAME=admin
-MONGO_ROOT_PASSWORD=change-me
+MONGO_ROOT_USERNAME=projectadmin
+MONGO_ROOT_PASSWORD=LocalDev
+SNOWFLAKE_PRIVATE_KEY_PATH=
+KAFKA_TOPIC=user-registrations
 MONGO_DATABASE=UserRegistrationDB
 MONGO_COLLECTION=User
-KAFKA_TOPIC=user-registrations
-KAFKA_GROUP_ID=user-registration-consumer
-PRODUCER_INTERVAL_SECONDS=5000
-PORT=3000
-SNOWFLAKE_ACCOUNT=your-account-identifier
-SNOWFLAKE_USER=your-user
-SNOWFLAKE_PASSWORD=your-password
+SNOWFLAKE_ACCOUNT=
+SNOWFLAKE_USER=
 SNOWFLAKE_DATABASE=USER_REGISTRATION_DB
 SNOWFLAKE_SCHEMA=ANALYTICS
-SNOWFLAKE_WAREHOUSE=COMPUTE_WH
+SNOWFLAKE_WAREHOUSE=
 SNOWFLAKE_TABLE=DAILY_REGISTRATIONS
-SNOWFLAKE_REGISTRATIONS_TABLE=REGISTRATIONS
-SNOWFLAKE_ROLE=ACCOUNTADMIN
+SNOWFLAKE_ROLE=
 ```
+
+Fill in `SNOWFLAKE_ACCOUNT`, `SNOWFLAKE_USER`, `SNOWFLAKE_WAREHOUSE`, and
+`SNOWFLAKE_ROLE`. Authentication uses either `SNOWFLAKE_PRIVATE_KEY_PATH`
+(Step 4) or an added `SNOWFLAKE_PASSWORD` line.
 
 `SNOWFLAKE_ACCOUNT` accepts the bare account identifier or a hostname ending in
 `.snowflakecomputing.com`. Database, schema, warehouse, table, and role must be
@@ -135,7 +135,7 @@ SNOWFLAKE_KEY_DIR=/home/your-name/.snowflake
 
 ## Step 4 - Create the Snowflake key pair (optional)
 
-Skip this step when you use `SNOWFLAKE_PASSWORD`.
+Skip this step when you add `SNOWFLAKE_PASSWORD` to `.env`.
 
 Windows (PowerShell):
 
@@ -146,10 +146,7 @@ powershell -ExecutionPolicy Bypass -File .\snowflake\generate_rsa_key.ps1
 Linux (bash):
 
 ```bash
-mkdir -p ~/.snowflake
-openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out ~/.snowflake/rsa_key.p8
-openssl pkey -in ~/.snowflake/rsa_key.p8 -pubout -out ~/.snowflake/rsa_key.pub
-grep -v "PUBLIC KEY" ~/.snowflake/rsa_key.pub | tr -d '\n'
+bash snowflake/generate_rsa_key.sh
 ```
 
 Register the printed public key body in Snowflake:
